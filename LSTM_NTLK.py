@@ -1,13 +1,12 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-# import seaborn as sns
+import seaborn as sns
 import re
-# from textblob import TextBlob
-# from collections import Counter
+from textblob import TextBlob
+from collections import Counter
 import os
 
-# --- NEW IMPORTS FOR DEEP LEARNING ---
 import tensorflow as tf
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
@@ -329,3 +328,4 @@ print(f"Results saved to {results_path}")
 # [[1114  378   64]
 #  [ 445 1461  317]
 #  [  89  354 1274]]
+
