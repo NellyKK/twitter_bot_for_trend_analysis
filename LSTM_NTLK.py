@@ -1,10 +1,10 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
+# import seaborn as sns
 import re
-from textblob import TextBlob
-from collections import Counter
+# from textblob import TextBlob
+# from collections import Counter
 import os
 
 # --- NEW IMPORTS FOR DEEP LEARNING ---
@@ -16,16 +16,23 @@ from tensorflow.keras.layers import Dense, Embedding, LSTM, SpatialDropout1D, Bi
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.callbacks import EarlyStopping
 
-from sklearn.model_selection import StratifiedKFold
+# from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split
 
 import nltk
 from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
 
-#Global Values and Functions
+# ==========================================
+# Global Values
+# ==========================================
+nltk.download('wordnet', quiet=True)
+lemmatizer = WordNetLemmatizer()
+
+# *** Handling Negations - Kept negation words in stop words
 stop_words = set(stopwords.words('english'))
-# Remove negation words - important for sentiment analysis
 stop_words.discard('not')
 stop_words.discard('no')
 stop_words.discard('nor')
@@ -49,6 +56,11 @@ stop_words.discard("mustn't")
 # Add amp (common in tweets)
 stop_words.add('amp')
 
+# ==========================================
+# Functions
+# ==========================================
+
+# *** Text Cleaning and Lemmatization
 def clean_tweet(text):
     if not isinstance(text, str): return ""
     text = text.lower()                          # Standardize case
@@ -57,14 +69,21 @@ def clean_tweet(text):
     text = re.sub(r"#", "", text)                # Remove # symbol
     text = re.sub(r"[^A-Za-z\s]", "", text)      # Keep only letters
     words = text.split()
-    return " ".join([w for w in words if w not in stop_words])
+    words = [lemmatizer.lemmatize(w, pos='v') for w in words if w not in stop_words] # Lemmatization
+    return " ".join(words)
 
 def build_model():
     model = Sequential()
+
+    # Vectorization - Word Embedding
     model.add(Embedding(MAX_NB_WORDS, EMBEDDING_DIM, input_length=MAX_SEQUENCE_LENGTH))
     model.add(SpatialDropout1D(0.2))
-    model.add(Bidirectional(LSTM(64, dropout=0.2, recurrent_dropout=0.2))) #Add this
-    model.add(Dense(3, activation='softmax'))
+    
+    # model.add(Bidirectional(LSTM(100, dropout=0.2, recurrent_dropout=0.2)))
+    # -> Accuracy 79%, Validation 70% - Overfitting
+    model.add(Bidirectional(LSTM(64, dropout=0.2, recurrent_dropout=0.2))) 
+
+    model.add(Dense(3, activation='softmax')) # 3 neurons - negative, neutral, positive
     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     return model
 
@@ -90,15 +109,15 @@ else:
 # ==========================================
 # PROMPT: Load existing model or train new one
 # ==========================================
-model_path = r"D:\Advanced_Python\project\sentiment_lstm_final_ntlk.keras"
+model_path = r"D:\Advanced_Python\project\sentiment_lstm_final_ntlk_split.keras"
 
 if os.path.exists(model_path):
     choice = input("Saved model found. Load it and skip training? (y/n): ")
     if choice.lower() == 'y':
         final_model = tf.keras.models.load_model(model_path)
         print("Model loaded successfully! Skipping Steps 1-6.")
-        # You can add prediction code here
-        exit()  # or replace with prediction logic
+        # Future Works - Prediction
+        exit()
 
 # ==========================================
 # STEP 1: Load the dataset
@@ -114,6 +133,7 @@ except FileNotFoundError:
 # ==========================================
 # STEP 2: Data Verification and Cleaning
 # ==========================================
+
 # Limit rows for processing speed
 # df = df.head(60000)
 print(df.head())
@@ -162,176 +182,111 @@ print(df['sentiment'].value_counts())
 # ==========================================
 print("\n>>> Preparing data for Deep Learning (LSTM)...")
 
+# *** Removing Rare Words - Keep Tops 5000
 MAX_NB_WORDS = 5000
 # MAX_NB_WORDS = 10000
-MAX_SEQUENCE_LENGTH = 100
+
+MAX_SEQUENCE_LENGTH = 100 # Default Tweets - 40-60 Words
 EMBEDDING_DIM = 100
 
+# *** Tokenization
 tokenizer = Tokenizer(num_words=MAX_NB_WORDS, lower=True)
 tokenizer.fit_on_texts(df['clean_text'].values)
 X = tokenizer.texts_to_sequences(df['clean_text'].values)
 X = pad_sequences(X, maxlen=MAX_SEQUENCE_LENGTH)
 
-# Encode Labels
+# *** Encode Labels
 label_encoder = LabelEncoder()
 y_integer = label_encoder.fit_transform(df['sentiment'])
 y_onehot = to_categorical(y_integer)
 
 # ==========================================
-# STEP 4: Train and Test LSTM w/ 10-FOLD CROSS VALIDATION, Stratification
+# STEP 4: Train and Test LSTM w/ 80/20 Split
 # ==========================================
-print(">>> Starting 10-Fold Cross Validation...")
+print(">>> Splitting data 80/20...")
 
-NUM_FOLDS = 10
-kfold = StratifiedKFold(n_splits=NUM_FOLDS, shuffle=True, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y_onehot, test_size=0.2, random_state=42, stratify=y_integer
+)
 
-fold_accuracies = []
-fold_losses = []
+print(f"Train size: {len(X_train)}, Test size: {len(X_test)}")
 
-# Function to build a fresh model for each fold
-# def build_model():
-#     model = Sequential()
-#     model.add(Embedding(MAX_NB_WORDS, EMBEDDING_DIM, input_length=MAX_SEQUENCE_LENGTH))
-#     model.add(SpatialDropout1D(0.2))
-#     # model.add(LSTM(100, dropout=0.2, recurrent_dropout=0.2))
-#     model.add(LSTM(64, dropout=0.2, recurrent_dropout=0.2))
-#     model.add(Dense(3, activation='softmax'))
-#     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-#     return model
+model = build_model()
 
-# Run each fold
-all_y_true = []
-all_y_pred = []
+# *** Early Stopping Techniques
+early_stop = EarlyStopping(monitor='val_loss', patience=2, restore_best_weights=True)
 
-for fold_num, (train_idx, test_idx) in enumerate(kfold.split(X, y_integer), 1):
-    print(f"\n--- Fold {fold_num}/{NUM_FOLDS} ---")
+history = model.fit(X_train, y_train,
+                    epochs=15,
+                    batch_size=128, # Common Batch Value
+                    validation_data=(X_test, y_test),
+                    callbacks=[early_stop],
+                    verbose=1)
 
-    X_train, X_test = X[train_idx], X[test_idx]
-    y_train, y_test = y_onehot[train_idx], y_onehot[test_idx]
-
-    # Build a fresh model for each fold
-    model = build_model()
-
-    # Train
-    early_stop = EarlyStopping(monitor='val_loss', patience=2, restore_best_weights=True)
-
-    model.fit(X_train, y_train,
-              epochs=15,
-              batch_size=128,
-              validation_data=(X_test, y_test),
-              callbacks=[early_stop],
-              verbose=1)
-    
-    # model.fit(X_train, y_train,
-    #           epochs=5,
-    #           batch_size=128,
-    #           validation_data=(X_test, y_test),
-    #           verbose=1)
-
-    # Evaluate
-    loss, accuracy = model.evaluate(X_test, y_test, verbose=0)
-    y_pred = model.predict(X_test)
-    y_pred_classes = np.argmax(y_pred, axis=1)
-    y_true_classes = np.argmax(y_test, axis=1)
-    
-    all_y_true.extend(y_true_classes)
-    all_y_pred.extend(y_pred_classes)
-    
-    print(f"Fold {fold_num} - Loss: {loss:.4f}, Accuracy: {accuracy:.4f}")
-
-    fold_accuracies.append(accuracy)
-    fold_losses.append(loss)
+# Evaluate
+loss, accuracy = model.evaluate(X_test, y_test, verbose=0)
+y_pred = model.predict(X_test)
+y_pred_classes = np.argmax(y_pred, axis=1)
+y_true_classes = np.argmax(y_test, axis=1)
 
 # ==========================================
 # STEP 5: RESULTS SUMMARY
 # ==========================================
 print("\n" + "=" * 50)
-print("10-FOLD CROSS VALIDATION RESULTS")
+print("80/20 TRAIN-TEST SPLIT RESULTS")
 print("=" * 50)
-for i in range(NUM_FOLDS):
-    print(f"  Fold {i+1:2d}: Accuracy = {fold_accuracies[i]:.4f}, Loss = {fold_losses[i]:.4f}")
-print("-" * 50)
-print(f"  Mean Accuracy:  {np.mean(fold_accuracies):.4f}")
-print(f"  Std Accuracy:   {np.std(fold_accuracies):.4f}")
-print(f"  Mean Loss:      {np.mean(fold_losses):.4f}")
-print(f"  Mean Error Rate: {1 - np.mean(fold_accuracies):.4f}")
+print(f"  Accuracy:   {accuracy:.4f}")
+print(f"  Loss:       {loss:.4f}")
+print(f"  Error Rate: {1 - accuracy:.4f}")
 
 # ZeroR Baseline
 zeror_accuracy = df['sentiment'].value_counts().max() / len(df)
 print(f"  ZeroR Baseline:  {zeror_accuracy:.4f}")
-print(f"  Improvement over ZeroR: {np.mean(fold_accuracies) - zeror_accuracy:.4f}")
+print(f"  Improvement over ZeroR: {accuracy - zeror_accuracy:.4f}")
 
-print("\nOverall Classification Report (All Folds Combined):")
-print(classification_report(all_y_true, all_y_pred, 
+print("\nClassification Report:")
+print(classification_report(y_true_classes, y_pred_classes, 
       target_names=label_encoder.classes_))
 print("Confusion Matrix:")
-print(confusion_matrix(all_y_true, all_y_pred))
+print(confusion_matrix(y_true_classes, y_pred_classes))
 print("=" * 50)
 
 # ==========================================
-# STEP 6: VISUALIZE FOLD RESULTS
+# STEP 6: VISUALIZE TRAINING HISTORY
 # ==========================================
-# plt.figure(figsize=(12, 5))
+plt.figure(figsize=(12, 5))
 
-# # Accuracy per fold
-# plt.subplot(1, 2, 1)
-# plt.bar(range(1, NUM_FOLDS + 1), fold_accuracies, color='steelblue')
-# plt.axhline(y=np.mean(fold_accuracies), color='red', linestyle='--', label=f'Mean: {np.mean(fold_accuracies):.4f}')
-# plt.xlabel('Fold')
-# plt.ylabel('Accuracy')
-# plt.title('Accuracy per Fold')
-# plt.xticks(range(1, NUM_FOLDS + 1))
-# plt.legend()
+plt.subplot(1, 2, 1)
+plt.plot(history.history['accuracy'], label='Train')
+plt.plot(history.history['val_accuracy'], label='Validation')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.title('Training vs Validation Accuracy')
+plt.legend()
 
-# # Loss per fold
-# plt.subplot(1, 2, 2)
-# plt.bar(range(1, NUM_FOLDS + 1), fold_losses, color='coral')
-# plt.axhline(y=np.mean(fold_losses), color='red', linestyle='--', label=f'Mean: {np.mean(fold_losses):.4f}')
-# plt.xlabel('Fold')
-# plt.ylabel('Loss')
-# plt.title('Loss per Fold')
-# plt.xticks(range(1, NUM_FOLDS + 1))
-# plt.legend()
+plt.subplot(1, 2, 2)
+plt.plot(history.history['loss'], label='Train')
+plt.plot(history.history['val_loss'], label='Validation')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Training vs Validation Loss')
+plt.legend()
 
-# plt.tight_layout()
-# plt.show()
+plt.tight_layout()
+plt.show()
 
 # ==========================================
-# STEP 7: SAVE / LOAD MODEL
+# STEP 7: SAVE MODEL
 # ==========================================
-
-# Train final model on ALL data (not just one fold)
-# print("\n>>> Training final model on all data...")
-# final_model = build_model()
-
-# # final_model.fit(X, y_onehot, epochs=5, batch_size=128, verbose=1)
-
-# early_stop_final = EarlyStopping(monitor='loss', patience=2, restore_best_weights=True)
-
-# final_model.fit(X, y_onehot,
-#                 epochs=15,
-#                 batch_size=128,
-#                 callbacks=[early_stop_final],
-#                 verbose=1)
-
-print("\n>>> Training final model on all data...")
-final_model = build_model()
-final_model.fit(X, y_onehot,
-                epochs=3,
-                batch_size=128,
-                verbose=1)
-
-# Save model
-save_path = r"D:\Advanced_Python\project\sentiment_lstm_final_ntlk.keras"
-final_model.save(save_path)
+save_path = r"D:\Advanced_Python\project\sentiment_lstm_final_ntlk_split.keras"
+model.save(save_path)
 print(f"Model saved to {save_path}")
 
-# Save fold results for later visualization
+# Save results
 results = pd.DataFrame({
-    'Fold': range(1, NUM_FOLDS + 1),
-    'Accuracy': fold_accuracies,
-    'Loss': fold_losses
+    'Metric': ['Accuracy', 'Loss', 'Error Rate', 'ZeroR Baseline'],
+    'Value': [accuracy, loss, 1 - accuracy, zeror_accuracy]
 })
-results_path = r"D:\Advanced_Python\project\fold_results_ntlk.csv"
+results_path = r"D:\Advanced_Python\project\split_results_ntlk_split.csv"
 results.to_csv(results_path, index=False)
-print(f"Fold results saved to {results_path}")
+print(f"Results saved to {results_path}")
