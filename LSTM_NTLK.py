@@ -109,7 +109,7 @@ else:
 # ==========================================
 # PROMPT: Load existing model or train new one
 # ==========================================
-model_path = r"D:\Advanced_Python\project\sentiment_lstm_final_ntlk_split.keras"
+model_path = r"sentiment_lstm_final_ntlk_split.keras"
 
 if os.path.exists(model_path):
     choice = input("Saved model found. Load it and skip training? (y/n): ")
@@ -122,7 +122,7 @@ if os.path.exists(model_path):
 # ==========================================
 # STEP 1: Load the dataset
 # ==========================================
-file_path = r"D:\Advanced_Python\project\TweetsWithLabels.csv"
+file_path = r"TweetsWithLabels.csv"
 
 try:
     df = pd.read_csv(file_path, encoding='utf-8')
@@ -278,7 +278,7 @@ plt.show()
 # ==========================================
 # STEP 7: SAVE MODEL
 # ==========================================
-save_path = r"D:\Advanced_Python\project\sentiment_lstm_final_ntlk_split.keras"
+save_path = r"sentiment_lstm_final_ntlk_split.keras"
 model.save(save_path)
 print(f"Model saved to {save_path}")
 
@@ -287,6 +287,45 @@ results = pd.DataFrame({
     'Metric': ['Accuracy', 'Loss', 'Error Rate', 'ZeroR Baseline'],
     'Value': [accuracy, loss, 1 - accuracy, zeror_accuracy]
 })
-results_path = r"D:\Advanced_Python\project\split_results_ntlk_split.csv"
+results_path = r"split_results_ntlk_split.csv"
 results.to_csv(results_path, index=False)
 print(f"Results saved to {results_path}")
+
+# ==========================================
+# RESULTS
+# ==========================================
+
+# Epoch 1/15
+# 172/172 ━━━━━━━━━━━━━━━━━━━━ 35s 165ms/step - accuracy: 0.5699 - loss: 0.8944 - val_accuracy: 0.6921 - val_loss: 0.7160
+# Epoch 2/15
+# 172/172 ━━━━━━━━━━━━━━━━━━━━ 32s 189ms/step - accuracy: 0.7307 - loss: 0.6581 - val_accuracy: 0.7003 - val_loss: 0.7015
+# Epoch 3/15
+# 172/172 ━━━━━━━━━━━━━━━━━━━━ 34s 198ms/step - accuracy: 0.7626 - loss: 0.5887 - val_accuracy: 0.7003 - val_loss: 0.7129
+# Epoch 4/15
+# 172/172 ━━━━━━━━━━━━━━━━━━━━ 39s 188ms/step - accuracy: 0.7853 - loss: 0.5446 - val_accuracy: 0.6996 - val_loss: 0.7368
+# 172/172 ━━━━━━━━━━━━━━━━━━━━ 6s 28ms/step
+
+# ==================================================
+# 80/20 TRAIN-TEST SPLIT RESULTS
+# ==================================================
+#   Accuracy:   0.7003
+#   Loss:       0.7015
+#   Error Rate: 0.2997
+#   ZeroR Baseline:  0.4045
+#   Improvement over ZeroR: 0.2958
+
+# Classification Report:
+#               precision    recall  f1-score   support
+
+#     negative       0.68      0.72      0.70      1556
+#      neutral       0.67      0.66      0.66      2223
+#     positive       0.77      0.74      0.76      1717
+
+#     accuracy                           0.70      5496
+#    macro avg       0.70      0.71      0.70      5496
+# weighted avg       0.70      0.70      0.70      5496
+
+# Confusion Matrix:
+# [[1114  378   64]
+#  [ 445 1461  317]
+#  [  89  354 1274]]
